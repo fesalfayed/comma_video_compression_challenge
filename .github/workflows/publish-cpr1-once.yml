@@ -1,0 +1,56 @@
+name: publish-cpr1-once
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/publish-cpr1-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: semantic-pose-landslide-selfcompress-cpr1
+      SOURCE_URL: https://github.com/fesalfayed/comma_video_compression_challenge/releases/download/semantic-pose-landslide-selfcompress/archive.zip
+      EXPECTED_SHA256: 0491d5df84fc70b62b3f7ccf8894f5e1b81c616de46a052e4423fc1e18fdc7cd
+      EXPECTED_BYTES: "191052"
+      TARGET_SHA: 32f771db5494ea8ef066b1fbac38ff05ae32c6cc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/semantic-pose-landslide-selfcompress
+
+      - name: Install repacker dependency
+        run: python3 -m pip install --disable-pip-version-check numpy
+
+      - name: Reproduce locked archive
+        run: |
+          curl --fail --location --retry 3 \
+            --output /tmp/source-archive.zip "$SOURCE_URL"
+          python3 \
+            submissions/semantic_pose_landslide_selfcompress/repack_carrier.py \
+            /tmp/source-archive.zip \
+            /tmp/archive.zip \
+            --report /tmp/repack-report.json
+          test "$(stat --format=%s /tmp/archive.zip)" = "$EXPECTED_BYTES"
+          echo "$EXPECTED_SHA256  /tmp/archive.zip" | sha256sum --check -
+          unzip -t /tmp/archive.zip
+
+      - name: Publish immutable release
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "release tag already exists" >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" \
+            /tmp/archive.zip \
+            --target "$TARGET_SHA" \
+            --title "Semantic Pose Landslide Self-Compressed CPR1" \
+            --notes "Lossless CPR1 carrier repack. 191,052 bytes. SHA-256: $EXPECTED_SHA256"
